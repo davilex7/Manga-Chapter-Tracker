@@ -1,6 +1,6 @@
 'use server';
 import { fetchWebPage } from '@/services/web-page-fetcher';
-import fetch from 'node-fetch';
+import fetch from 'node-fetch'; // Import node-fetch
 
 interface MangaInfo {
   title: string;
@@ -19,7 +19,13 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
 
     try {
       // Step 1: Fetch the HTML content of the search results page
-      const searchResultsPageContent = await fetchWebPage(`https://www.mangaread.org/search?name=${encodeURIComponent(title)}`);
+      const searchUrl = `https://www.mangaread.org/search?name=${encodeURIComponent(title)}`;
+      const searchResultsPageContent = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Referer': 'https://www.mangaread.org/' // Add a referer header
+        }
+      }).then(res => res.text());
 
       if (!searchResultsPageContent) {
         error = `Failed to fetch search results for ${title}: No content returned`;
