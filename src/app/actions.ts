@@ -1,5 +1,5 @@
 'use server';
-import { fetchWebPage } from '@/services/web-page-fetcher';
+import {fetchWebPage} from '@/services/web-page-fetcher';
 
 interface MangaInfo {
   title: string;
