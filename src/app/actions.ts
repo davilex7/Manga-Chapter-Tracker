@@ -1,5 +1,4 @@
 'use server';
-import {fetchWebPage} from '@/services/web-page-fetcher';
 import fetch from 'node-fetch';
 
 interface MangaInfo {
@@ -17,11 +16,14 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
     let error: string | undefined = undefined;
 
     try {
-      // Step 1: Construct the search URL
+      // Step 1: Fetch the HTML content of the search results page
       const searchUrl = `https://www.mangaread.org/search?name=${encodeURIComponent(title)}`;
-
-      // Step 2: Fetch the HTML content of the search results page
-      const searchResultsPageContent = await fetchWebPage(searchUrl);
+      const searchResultsPageContent = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Referer': 'https://www.mangaread.org/' // Add a referer header
+        }
+      }).then(res => res.text());
 
       if (!searchResultsPageContent) {
         error = `Failed to fetch search results for ${title}: No content returned`;
@@ -30,7 +32,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
         continue; // Skip to the next manga title
       }
 
-      // Step 3: Parse the HTML content to extract the manga link
+      // Step 2: Parse the HTML content to extract the manga link
       let DOMParserImplementation: typeof DOMParser;
 
       if (typeof DOMParser === 'undefined') {
@@ -46,7 +48,9 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       } else {
           DOMParserImplementation = DOMParser;
       }
+
       const parser = new DOMParserImplementation();
+
       const searchResultsPage = parser.parseFromString(searchResultsPageContent, 'text/html');
 
       if (!searchResultsPage) {
@@ -56,8 +60,8 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
         continue; // Skip to the next manga title
       }
 
-      // Step 4: Extract the manga link from the search results page
-      const firstMangaItem = searchResultsPage.querySelector('.c-tabs-item a'); // Selecting the link directly
+      // Step 3: Extract the manga link from the search results page
+      const firstMangaItem = searchResultsPage.querySelector('.c-tabs-item a');
       if (!firstMangaItem) {
         error = `No search results found for ${title}: Check manga title or website change`;
         console.error(error);
@@ -65,10 +69,15 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
         continue;
       }
 
-      const mangaUrl = firstMangaItem.href; // Directly extract the href
+      const mangaUrl = firstMangaItem.href;
 
-      // Step 5: Fetch the HTML content of the manga's page
-      const mangaPageContent = await fetchWebPage(mangaUrl);
+      // Step 4: Fetch the HTML content of the manga's page
+      const mangaPageContent = await fetch(mangaUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Referer': 'https://www.mangaread.org/' // Add a referer header
+        }
+      }).then(res => res.text());
 
       if (!mangaPageContent) {
         error = `Failed to fetch manga page for ${title} at ${mangaUrl}`;
@@ -77,6 +86,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
         continue;
       }
 
+      // Step 5: Parse the HTML content of the manga's page
       const mangaPage = parser.parseFromString(mangaPageContent, 'text/html');
 
       if (!mangaPage) {
@@ -85,6 +95,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
         newMangaInfoList.push({ title, chapter: null, loading: false, error });
         continue;
       }
+
       // Step 6: Extract the latest chapter from the manga's page
       const latestChapterElement = mangaPage.querySelector('ul.main.version-chap.no-volumn.active li a');
 
@@ -96,13 +107,6 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       }
 
       latestChapter = latestChapterElement.textContent?.trim() || 'N/A';
-
-      if (!latestChapter) {
-        error = `Could not extract chapter text for ${title} at ${mangaUrl}`;
-        console.warn(error);
-        newMangaInfoList.push({ title, chapter: null, loading: false, error });
-        continue;
-      }
 
       newMangaInfoList.push({ title, chapter: latestChapter, loading: false, error: undefined });
 

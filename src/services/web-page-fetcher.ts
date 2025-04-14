@@ -15,3 +15,4 @@ export async function fetchWebPage(url: string): Promise<string> {
     throw error;
   }
 }
+
