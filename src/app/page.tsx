@@ -7,7 +7,6 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {Skeleton} from '@/components/ui/skeleton';
 import {useToast} from '@/hooks/use-toast';
 import {fetchWebPage} from '@/services/web-page-fetcher';
-import {extractLatestChapter} from '@/ai/flows/extract-latest-chapter';
 
 interface MangaInfo {
   title: string;
@@ -47,9 +46,47 @@ export default function Home() {
 
     for (const title of mangaTitles) {
       try {
-        const webpageContent = await fetchWebPage('https://example.com/manga/' + title); // Replace with actual URL
-        const chapterInfo = await extractLatestChapter({mangaTitle: title, webpageContent});
-        newMangaInfoList.push({title, chapter: chapterInfo.latestChapter, loading: false});
+        // Fetch the HTML content of the search results page
+        const searchResultsPageContent = await fetchWebPage(`https://www.mangaread.org/search?name=${encodeURIComponent(title)}`);
+
+        // Parse the HTML content to extract the manga link
+        const parser = new DOMParser();
+        const searchResultsPage = parser.parseFromString(searchResultsPageContent, 'text/html');
+
+        // Find the first manga item in the search results
+        const firstMangaItem = searchResultsPage.querySelector('.c-tabs-item');
+
+        if (!firstMangaItem) {
+          console.warn(`No search results found for ${title}`);
+          newMangaInfoList.push({title, chapter: 'Not Found', loading: false});
+          continue;
+        }
+
+        // Extract the link to the manga's page
+        const mangaLink = firstMangaItem.querySelector('a')?.href;
+
+        if (!mangaLink) {
+          console.warn(`Could not extract manga link for ${title}`);
+          newMangaInfoList.push({title, chapter: 'Link Not Found', loading: false});
+          continue;
+        }
+
+        // Fetch the HTML content of the manga's page
+        const mangaPageContent = await fetchWebPage(mangaLink);
+        const mangaPage = parser.parseFromString(mangaPageContent, 'text/html');
+
+        // Extract the latest chapter from the manga's page
+        const latestChapterElement = mangaPage.querySelector('ul.main.version-chap.no-volumn.active li a');
+
+        if (!latestChapterElement) {
+          console.warn(`Could not find latest chapter for ${title}`);
+          newMangaInfoList.push({title, chapter: 'Chapter Not Found', loading: false});
+          continue;
+        }
+
+        const latestChapter = latestChapterElement.textContent?.trim() || 'N/A';
+        newMangaInfoList.push({title, chapter: latestChapter, loading: false});
+
       } catch (error: any) {
         console.error(`Failed to process ${title}: ${error.message}`);
         toast({
