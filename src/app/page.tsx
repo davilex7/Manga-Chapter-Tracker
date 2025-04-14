@@ -6,13 +6,8 @@ import {Textarea} from '@/components/ui/textarea';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Skeleton} from '@/components/ui/skeleton';
 import {useToast} from '@/hooks/use-toast';
-
-interface MangaInfo {
-  title: string;
-  chapter: string | null;
-  loading: boolean;
-  error?: string;
-}
+import {processMangaListAction} from '@/app/actions';
+import type {MangaInfo} from '@/app/actions'; // Import MangaInfo type
 
 export default function Home() {
   const [mangaListText, setMangaListText] = useState<string>('');
@@ -28,8 +23,7 @@ export default function Home() {
     try {
       const text = await file.text();
       setMangaListText(text);
-    } catch (error: any) {
-      console.error('Error reading file:', error.message);
+    } catch (error) {
       toast({
         title: 'Error reading file',
         description: 'Failed to read the contents of the file.',
@@ -39,36 +33,10 @@ export default function Home() {
   };
 
   const processMangaList = async () => {
-    try {
-      const mangaTitles = mangaListText.split('\n').map(line => line.trim()).filter(Boolean);
-
-      // Initialize manga info list with loading state
-      setMangaInfoList(mangaTitles.map(title => ({title, chapter: null, loading: true})));
-
-      // Simulate processing each manga title
-      const updatedMangaInfoList = mangaTitles.map(title => {
-        try {
-          // Simulate fetching chapter (replace with actual logic if needed)
-          const latestChapter = Math.floor(Math.random() * 100).toString(); // Example: random chapter number
-
-          return {title, chapter: latestChapter, loading: false};
-        } catch (error: any) {
-          console.error(`Error processing manga "${title}":`, error.message);
-          return {title, chapter: null, loading: false, error: error.message};
-        }
-      });
-
-      setMangaInfoList(updatedMangaInfoList);
-    } catch (error: any) {
-      console.error('Error processing manga list:', error.message);
-      toast({
-        title: 'Error processing manga list',
-        description: 'Failed to process the manga list.',
-        variant: 'destructive',
-      });
-      // Reset manga info list to indicate a general error
-      setMangaInfoList([]);
-    }
+    const mangaTitles = mangaListText.split('\n').map(line => line.trim()).filter(Boolean);
+    setMangaInfoList(mangaTitles.map(title => ({ title, chapter: null, loading: true })));
+    const results = await processMangaListAction(mangaTitles);
+    setMangaInfoList(results);
   };
 
   const handleSaveOutput = () => {
@@ -102,7 +70,7 @@ export default function Home() {
       <h1 className="text-2xl font-bold mb-4">Manga Chapter Tracker</h1>
 
       <div className="mb-4">
-        <input type="file" id="file-upload" className="sr-only" onChange={handleFileChange}/>
+        <input type="file" id="file-upload" className="sr-only" onChange={handleFileChange} />
         <label htmlFor="file-upload">
           <Button asChild>
             <span className="mr-2">Upload Manga List</span>
