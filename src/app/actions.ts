@@ -1,6 +1,6 @@
 'use server';
 import { fetchWebPage } from '@/services/web-page-fetcher';
-import fetch from 'node-fetch'; // Import node-fetch
+import fetch from 'node-fetch';
 
 interface MangaInfo {
   title: string;
@@ -35,7 +35,24 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       }
 
       // Step 2: Parse the HTML content to extract the manga link
-      const parser = new DOMParser();
+      let DOMParserImplementation: typeof DOMParser;
+
+      if (typeof DOMParser === 'undefined') {
+          try {
+              const { JSDOM } = await import('jsdom');
+              DOMParserImplementation = new JSDOM('').window.DOMParser;
+          } catch (domError: any) {
+              error = `Failed to create DOMParser: ${domError.message}`;
+              console.error(error);
+              newMangaInfoList.push({title, chapter: null, loading: false, error});
+              continue;
+          }
+      } else {
+          DOMParserImplementation = DOMParser;
+      }
+
+      const parser = new DOMParserImplementation();
+
       const searchResultsPage = parser.parseFromString(searchResultsPageContent, 'text/html');
 
       if (!searchResultsPage) {
