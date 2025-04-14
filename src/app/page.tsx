@@ -6,12 +6,12 @@ import {Textarea} from '@/components/ui/textarea';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Skeleton} from '@/components/ui/skeleton';
 import {useToast} from '@/hooks/use-toast';
-import {processMangaListAction} from '@/app/actions'; // Import the server action
 
 interface MangaInfo {
   title: string;
   chapter: string | null;
   loading: boolean;
+  error?: string;
 }
 
 export default function Home() {
@@ -28,7 +28,8 @@ export default function Home() {
     try {
       const text = await file.text();
       setMangaListText(text);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error reading file:', error.message);
       toast({
         title: 'Error reading file',
         description: 'Failed to read the contents of the file.',
@@ -38,12 +39,36 @@ export default function Home() {
   };
 
   const processMangaList = async () => {
-    const mangaTitles = mangaListText.split('\n').map(line => line.trim()).filter(Boolean);
+    try {
+      const mangaTitles = mangaListText.split('\n').map(line => line.trim()).filter(Boolean);
 
-    setMangaInfoList(mangaTitles.map(title => ({title, chapter: null, loading: true})));
-    const newMangaInfoList: MangaInfo[] = [];
-    const results = await processMangaListAction(mangaTitles)
-    setMangaInfoList(results);
+      // Initialize manga info list with loading state
+      setMangaInfoList(mangaTitles.map(title => ({title, chapter: null, loading: true})));
+
+      // Simulate processing each manga title
+      const updatedMangaInfoList = mangaTitles.map(title => {
+        try {
+          // Simulate fetching chapter (replace with actual logic if needed)
+          const latestChapter = Math.floor(Math.random() * 100).toString(); // Example: random chapter number
+
+          return {title, chapter: latestChapter, loading: false};
+        } catch (error: any) {
+          console.error(`Error processing manga "${title}":`, error.message);
+          return {title, chapter: null, loading: false, error: error.message};
+        }
+      });
+
+      setMangaInfoList(updatedMangaInfoList);
+    } catch (error: any) {
+      console.error('Error processing manga list:', error.message);
+      toast({
+        title: 'Error processing manga list',
+        description: 'Failed to process the manga list.',
+        variant: 'destructive',
+      });
+      // Reset manga info list to indicate a general error
+      setMangaInfoList([]);
+    }
   };
 
   const handleSaveOutput = () => {
@@ -55,7 +80,7 @@ export default function Home() {
       return;
     }
 
-    const outputText = mangaInfoList.map(item => `${item.title}: ${item.chapter}`).join('\n');
+    const outputText = mangaInfoList.map(item => `${item.title}: ${item.chapter || 'N/A'}`).join('\n');
     const blob = new Blob([outputText], {type: 'text/plain'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -105,13 +130,15 @@ export default function Home() {
               <CardDescription>
                 {manga.loading ? (
                   <Skeleton>Loading...</Skeleton>
+                ) : manga.error ? (
+                  <span className="text-destructive">Error: {manga.error}</span>
                 ) : (
                   <>
                     Latest Chapter:{' '}
-                    {manga.chapter === 'Error' ? (
-                      <span className="text-destructive">Error</span>
+                    {manga.chapter !== null ? (
+                      <span className="text-accent">{manga.chapter}</span>
                     ) : (
-                      <span className="text-accent">{manga.chapter || 'N/A'}</span>
+                      <span>N/A</span>
                     )}
                   </>
                 )}
