@@ -48,7 +48,7 @@ Manga Chapter Tracker is a NextJS application that helps you track the latest ch
    yarn dev
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+4. Open [http://localhost:3000](http://localhost:9002) in your browser to see the application.
 
 ## Usage
 
