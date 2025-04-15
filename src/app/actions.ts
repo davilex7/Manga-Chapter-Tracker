@@ -4,68 +4,76 @@ import fs from 'fs/promises'; // Node.js file system module
 import path from 'path'; // Node.js path module
 import fetch from 'node-fetch';
 
-// --- Data Structure for Storage ---
+// --- Data Structure for Storage (Now includes rating) ---
 interface StoredMangaInfo {
   title: string;
   latestChapter: string | null;
   userChapter: string;
+  rating: number; // Added rating field (0-5)
 }
 
 // --- File Path Configuration ---
-// Assume a 'data' directory in the project root
 const dataDir = path.resolve(process.cwd(), 'data');
 const dataFilePath = path.join(dataDir, 'manga-data.json');
 
 // --- Helper Functions for File I/O ---
 
-// Ensures the data directory exists
 async function ensureDataDirExists() {
   try {
     await fs.access(dataDir);
   } catch (error: any) {
     if (error.code === 'ENOENT') {
-      // Directory does not exist, create it
       console.log(`Data directory not found at ${dataDir}. Creating...`);
       await fs.mkdir(dataDir, { recursive: true });
     } else {
-      // Other error accessing directory
       console.error(`Error accessing data directory ${dataDir}:`, error);
-      throw error; // Re-throw other errors
+      throw error;
     }
   }
 }
 
 // Reads the manga list from the JSON file
 async function readMangaData(): Promise<StoredMangaInfo[]> {
-  await ensureDataDirExists(); // Make sure directory exists before reading
+  await ensureDataDirExists();
   try {
-    // Check if file exists before trying to read
     await fs.access(dataFilePath);
     const fileContent = await fs.readFile(dataFilePath, 'utf-8');
-    return JSON.parse(fileContent) as StoredMangaInfo[];
+    const parsedData = JSON.parse(fileContent) as any[]; // Parse as any[] first for migration
+
+    // Ensure backward compatibility: add rating field if missing
+    return parsedData.map(manga => ({
+      title: manga.title || 'Untitled', // Basic validation
+      latestChapter: manga.latestChapter !== undefined ? manga.latestChapter : null,
+      userChapter: manga.userChapter || '1',
+      rating: typeof manga.rating === 'number' && manga.rating >= 0 && manga.rating <= 5 ? manga.rating : 0, // Default to 0 if missing/invalid
+    }));
+
   } catch (error: any) {
     if (error.code === 'ENOENT') {
-      // File does not exist, return empty array (first run)
       console.log(`Data file not found at ${dataFilePath}. Returning empty list.`);
       return [];
     } else if (error instanceof SyntaxError) {
       console.error(`Error parsing JSON from ${dataFilePath}. Returning empty list.`, error);
-      // Consider backing up the corrupted file here if needed
-      return []; // Return empty list if JSON is corrupted
+      return [];
     } else {
-      // Other errors (permissions, etc.)
       console.error(`Error reading manga data file ${dataFilePath}:`, error);
-      // Depending on the error, you might want to return [] or throw
-      return []; // Return empty list on other read errors for simplicity
+      return [];
     }
   }
 }
 
 // Writes the manga list to the JSON file
 async function writeMangaData(mangaList: StoredMangaInfo[]): Promise<boolean> {
-  await ensureDataDirExists(); // Make sure directory exists before writing
+  await ensureDataDirExists();
   try {
-    const dataString = JSON.stringify(mangaList, null, 2); // Pretty print JSON
+    // Ensure all items have the rating field before saving
+    const listToWrite = mangaList.map(manga => ({
+      title: manga.title,
+      latestChapter: manga.latestChapter,
+      userChapter: manga.userChapter,
+      rating: typeof manga.rating === 'number' ? manga.rating : 0, // Ensure rating is always a number
+    }));
+    const dataString = JSON.stringify(listToWrite, null, 2);
     await fs.writeFile(dataFilePath, dataString, 'utf-8');
     console.log(`Manga data successfully saved to ${dataFilePath}`);
     return true;
@@ -77,27 +85,23 @@ async function writeMangaData(mangaList: StoredMangaInfo[]): Promise<boolean> {
 
 // --- Server Actions ---
 
-// Action to load the initial list
 export async function loadMangaListAction(): Promise<StoredMangaInfo[]> {
   return await readMangaData();
 }
 
-// Action to save the entire list (used for add, update user chapter, delete)
 export async function saveMangaListAction(mangaList: StoredMangaInfo[]): Promise<{ success: boolean }> {
   const success = await writeMangaData(mangaList);
   return { success };
 }
 
 
-// --- Web Scraping Logic (Adapted from previous correct version) ---
-// Interface for the result of the web scraping part
+// --- Web Scraping Logic (Remains the same, only data structure changes) ---
 interface MangaScrapeResult {
   title: string;
   latestChapter: string | null;
   error?: string;
 }
 
-// Initialize DOMParser (handles server/client environment)
 let DOMParserImplementation: typeof DOMParser;
 try {
   if (typeof DOMParser === 'undefined') {
@@ -114,6 +118,7 @@ try {
 }
 
 async function fetchLatestChapter(title: string, parser: DOMParser): Promise<MangaScrapeResult> {
+  // ... (Keep the existing fetchLatestChapter implementation - no changes needed here)
   let latestChapter: string | null = null;
   let error: string | undefined = undefined;
   let mangaPageUrl: string | null = null;
@@ -191,7 +196,7 @@ async function fetchLatestChapter(title: string, parser: DOMParser): Promise<Man
 // Action to update latest chapters for all stored manga
 export async function updateLatestChaptersAction(): Promise<{ updatedList: StoredMangaInfo[], errors: { title: string, error: string }[] }> {
   console.log("Starting updateLatestChaptersAction...");
-  const currentMangaList = await readMangaData();
+  const currentMangaList = await readMangaData(); // Reads data including rating
   if (currentMangaList.length === 0) {
     console.log("No manga in the list to update.");
     return { updatedList: [], errors: [] };
@@ -201,21 +206,17 @@ export async function updateLatestChaptersAction(): Promise<{ updatedList: Store
   const parser = new DOMParserImplementation();
   const scrapePromises: Promise<MangaScrapeResult>[] = [];
 
-  // Create scrape promises with delay
   for (let i = 0; i < mangaTitles.length; i++) {
     const title = mangaTitles[i];
     const promise = new Promise<MangaScrapeResult>(resolve => {
-      // Introduce delay before starting each fetchLatestChapter call
       setTimeout(async () => {
         const result = await fetchLatestChapter(title, parser);
         resolve(result);
-      }, i * 500); // Stagger requests by 500ms
+      }, i * 500);
     });
     scrapePromises.push(promise);
   }
 
-
-  // Wait for all scraping operations to complete
   const scrapeResults = await Promise.all(scrapePromises);
 
   const updateErrors: { title: string, error: string }[] = [];
@@ -225,18 +226,16 @@ export async function updateLatestChaptersAction(): Promise<{ updatedList: Store
       if (result.error) {
         updateErrors.push({ title: storedManga.title, error: result.error });
       }
-      // Update latestChapter only if scraping was successful (even if chapter is null/N/A)
-      // Keep the existing userChapter
+      // Update latestChapter, keep existing userChapter and rating
       return {
-        ...storedManga, // Keep existing userChapter
-        latestChapter: result.error ? storedManga.latestChapter : result.latestChapter, // Keep old chapter on error
+        ...storedManga, // Keep existing userChapter and rating
+        latestChapter: result.error ? storedManga.latestChapter : result.latestChapter,
       };
     }
-    // Should not happen if scrapeResults contains all titles, but as fallback:
     return storedManga;
   });
 
-  // Save the newly updated list back to the file
+  // Save the newly updated list (including ratings) back to the file
   await writeMangaData(newUpdatedList);
 
   console.log("updateLatestChaptersAction finished.");

@@ -1,49 +1,82 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { Trash } from "lucide-react";
+import { Trash, Star, Search, ArrowUpDown } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select" // Import Select component
+// Import the newly created StarRating component
+import { StarRating } from '@/components/ui/star-rating';
 import {
   loadMangaListAction,
   saveMangaListAction,
   updateLatestChaptersAction
-} from '@/app/actions'; // Import all actions
+} from '@/app/actions';
 
-// Interface for the state managed in the frontend
+// --- Interfaces ---
 interface MangaInfo {
   title: string;
   latestChapter: string | null;
   userChapter: string;
+  rating: number; // Added rating
   // Transient states for UI feedback
-  loadingUpdate?: boolean; // For individual manga loading state if needed (optional)
-  errorUpdate?: string;    // For individual manga error state if needed (optional)
+  loadingUpdate?: boolean;
+  errorUpdate?: string;
 }
 
-// Interface matching the data structure stored in the file/actions
 interface StoredMangaInfo {
   title: string;
   latestChapter: string | null;
   userChapter: string;
+  rating: number; // Added rating
 }
 
+// --- Sorting Types ---
+type SortKey = 'default' | 'title' | 'rating';
+type SortOrder = 'asc' | 'desc';
+interface SortOption {
+  value: string; // e.g., "title-asc"
+  label: string; // e.g., "Título (A-Z)"
+}
+
+// --- Star Rating Component (Removed from here) ---
+
+
+// --- Main Component ---
 export default function Home() {
   const [mangaList, setMangaList] = useState<MangaInfo[]>([]);
   const [newMangaTitle, setNewMangaTitle] = useState<string>('');
-  const [isLoadingList, setIsLoadingList] = useState<boolean>(true); // Loading state for initial load
-  const [isUpdatingAll, setIsUpdatingAll] = useState<boolean>(false); // Loading state for updating all chapters
+  const [isLoadingList, setIsLoadingList] = useState<boolean>(true);
+  const [isUpdatingAll, setIsUpdatingAll] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>(''); // State for search term
+  const [sortCriteria, setSortCriteria] = useState<string>('default'); // State for sorting e.g., "title-asc"
   const { toast } = useToast();
+
+  // --- Sorting Options ---
+  const sortOptions: SortOption[] = [
+    { value: 'default', label: 'Por defecto' },
+    { value: 'title-asc', label: 'Título (A-Z)' },
+    { value: 'title-desc', label: 'Título (Z-A)' },
+    { value: 'rating-desc', label: 'Puntuación (Mayor a Menor)' },
+    { value: 'rating-asc', label: 'Puntuación (Menor a Mayor)' },
+  ];
+
 
   // --- Data Loading ---
   const loadMangaList = useCallback(async () => {
     setIsLoadingList(true);
     try {
       const storedList = await loadMangaListAction();
-      // Map StoredMangaInfo to MangaInfo for frontend state
       setMangaList(storedList.map(m => ({ ...m, loadingUpdate: false, errorUpdate: undefined })));
     } catch (error: any) {
       toast({
@@ -51,43 +84,35 @@ export default function Home() {
         description: `Failed to load data from server: ${error.message}`,
         variant: 'destructive',
       });
-      setMangaList([]); // Set to empty list on error
+      setMangaList([]);
     } finally {
       setIsLoadingList(false);
     }
-  }, [toast]); // Include toast in dependencies
+  }, [toast]);
 
   useEffect(() => {
-    // Load manga list from server file on initial render
     loadMangaList();
-  }, [loadMangaList]); // Run only once on mount
+  }, [loadMangaList]);
 
-  // --- Data Saving Utility ---
-  // Debounced save function to avoid saving too frequently on rapid changes
+  // --- Data Saving Utility (Debounced) ---
   const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
     return (...args: Parameters<F>): Promise<ReturnType<F>> =>
         new Promise((resolve) => {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-
+          if (timeoutId) clearTimeout(timeoutId);
           timeoutId = setTimeout(() => {
-            timeoutId = null; // Clear timeoutId after execution
+            timeoutId = null;
             resolve(func(...args));
           }, waitFor);
         });
   };
 
-
-  // Saves the current state to the server file
   const saveMangaListToServer = useCallback(async (listToSave: MangaInfo[]) => {
-    // Prepare data for saving (remove transient UI states)
-    const storedList: StoredMangaInfo[] = listToSave.map(({ title, latestChapter, userChapter }) => ({
+    const storedList: StoredMangaInfo[] = listToSave.map(({ title, latestChapter, userChapter, rating }) => ({
       title,
       latestChapter,
       userChapter,
+      rating: rating ?? 0, // Ensure rating is saved, default to 0 if somehow undefined
     }));
     console.log("Calling saveMangaListAction with:", storedList);
     const result = await saveMangaListAction(storedList);
@@ -97,90 +122,71 @@ export default function Home() {
         description: 'Failed to save the manga list to the server.',
         variant: 'destructive',
       });
-      // Optionally: Add logic to retry or revert optimistic update
     } else {
       console.log("List saved successfully.");
-      toast({ // Optional success toast
-        title: 'List Saved',
-        description: 'Your manga list has been saved.',
-      });
+      // Optional: Remove success toast for less noise on frequent saves
+      // toast({ title: 'List Saved', description: 'Your manga list has been saved.' });
     }
   }, [toast]);
 
-  // Debounced version of the save function
-  const debouncedSave = useCallback(debounce(saveMangaListToServer, 1000), [saveMangaListToServer]);
-
+  const debouncedSave = useCallback(debounce(saveMangaListToServer, 1200), [saveMangaListToServer]); // Increased debounce time slightly
 
   // --- CRUD Operations ---
-
   const addManga = () => {
     const trimmedTitle = newMangaTitle.trim();
     if (trimmedTitle === '') {
       toast({ title: "Error", description: "Manga title cannot be empty.", variant: "destructive" });
       return;
     }
-    // Check if manga already exists (case-insensitive)
     if (mangaList.some(manga => manga.title.toLowerCase() === trimmedTitle.toLowerCase())) {
-      toast({ title: "Error", description: `Manga "${trimmedTitle}" already exists in the list.`, variant: "destructive" });
+      toast({ title: "Error", description: `Manga "${trimmedTitle}" already exists.`, variant: "destructive" });
       return;
     }
 
-
     const newManga: MangaInfo = {
       title: trimmedTitle,
-      latestChapter: null, // Will be fetched on update
-      userChapter: '1',    // Default user chapter
+      latestChapter: null,
+      userChapter: '1',
+      rating: 0, // Default rating
       loadingUpdate: false,
       errorUpdate: undefined,
     };
 
-    // Optimistic update of local state
     const updatedList = [...mangaList, newManga];
     setMangaList(updatedList);
-    setNewMangaTitle(''); // Clear input field
-
-    // Save the updated list to the server (debounced)
+    setNewMangaTitle('');
     debouncedSave(updatedList);
   };
 
   const updateChapter = (index: number, newUserChapter: string) => {
-    // Basic validation for chapter number
     const chapterNum = parseInt(newUserChapter, 10);
-    if (isNaN(chapterNum) && newUserChapter !== '') { // Allow empty string temporarily during typing
-      toast({ title: "Invalid Chapter", description: "Please enter a valid number for the chapter.", variant: "warning" });
-      return; // Or handle differently, e.g., allow typing but don't save invalid state
-    }
-    // Prevent negative numbers or zero if desired
-    if (chapterNum <= 0 && newUserChapter !== '') {
-      toast({ title: "Invalid Chapter", description: "Chapter number must be positive.", variant: "warning" });
-      // Optionally reset to previous value or '1'
-      return;
-    }
+    if (isNaN(chapterNum) && newUserChapter !== '') return;
+    if (chapterNum <= 0 && newUserChapter !== '') return;
 
-
-    // Optimistic update
     const updatedList = mangaList.map((manga, i) =>
-        i === index ? { ...manga, userChapter: newUserChapter } : manga
+        i === index ? { ...manga, userChapter: newUserChapter || '1' } : manga // Default to '1' if empty
     );
     setMangaList(updatedList);
-
-    // Save the updated list (debounced)
     debouncedSave(updatedList);
   };
 
-  const deleteManga = (index: number) => {
-    // Optimistic update
-    const mangaToDelete = mangaList[index]; // Get title for confirmation toast
-    const updatedList = mangaList.filter((_, i) => i !== index);
+  // --- Update Rating ---
+  const updateRating = (index: number, newRating: number) => {
+    const updatedList = mangaList.map((manga, i) =>
+        i === index ? { ...manga, rating: newRating } : manga
+    );
     setMangaList(updatedList);
+    debouncedSave(updatedList); // Save after rating change
+  };
 
+
+  const deleteManga = (titleToDelete: string) => { // Find by title for safety after filtering/sorting
+    const updatedList = mangaList.filter((manga) => manga.title !== titleToDelete);
+    setMangaList(updatedList);
     toast({
       title: 'Manga Deleted',
-      description: `"${mangaToDelete.title}" has been removed from your list.`,
+      description: `"${titleToDelete}" has been removed.`,
     });
-
-
-    // Save the updated list (debounced)
     debouncedSave(updatedList);
   };
 
@@ -191,124 +197,202 @@ export default function Home() {
       return;
     }
     setIsUpdatingAll(true);
-    setMangaList(prevList => prevList.map(m => ({ ...m, loadingUpdate: true, errorUpdate: undefined }))); // Indicate loading visually
+    setMangaList(prevList => prevList.map(m => ({ ...m, loadingUpdate: true, errorUpdate: undefined })));
 
     try {
       const { updatedList: serverUpdatedList, errors } = await updateLatestChaptersAction();
-
-      // Update local state with the results from the server
-      setMangaList(serverUpdatedList.map(m => ({ ...m, loadingUpdate: false, errorUpdate: undefined }))); // Reset loading/error
+      setMangaList(serverUpdatedList.map(m => ({ ...m, loadingUpdate: false, errorUpdate: undefined })));
 
       if (errors.length > 0) {
         toast({
           title: `Update partially failed (${errors.length} manga)`,
-          description: `Could not fetch latest chapters for: ${errors.map(e => e.title).join(', ')}. Check console for details.`,
-          variant: 'warning', // Use warning variant
+          description: `Errors for: ${errors.map(e => e.title).join(', ')}.`,
+          variant: 'warning',
         });
-        // Optionally mark specific manga with errors in the UI
         setMangaList(prevList => prevList.map(manga => {
           const errorInfo = errors.find(e => e.title === manga.title);
           return errorInfo ? { ...manga, errorUpdate: errorInfo.error } : manga;
         }));
-
       } else {
         toast({
           title: 'Update Complete',
-          description: 'Latest chapters fetched successfully for all manga.',
+          description: 'Latest chapters fetched successfully.',
         });
       }
-
     } catch (error: any) {
       toast({
         title: 'Error Updating Chapters',
         description: `An unexpected error occurred: ${error.message}`,
         variant: 'destructive',
       });
-      // Reset loading state on general error
       setMangaList(prevList => prevList.map(m => ({ ...m, loadingUpdate: false })));
     } finally {
       setIsUpdatingAll(false);
     }
   };
 
+  // --- Filtering and Sorting Logic ---
+  const filteredAndSortedMangaList = useMemo(() => {
+    let filteredList = mangaList;
+
+    // Filtering
+    if (searchTerm.trim() !== '') {
+      filteredList = mangaList.filter(manga =>
+          manga.title.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Sorting
+    const [key, order] = sortCriteria.split('-') as [SortKey | 'default', SortOrder | undefined];
+
+    if (key === 'default' || !order) {
+      // When default, sort by title ascending as a sensible default
+      return [...filteredList].sort((a, b) => a.title.localeCompare(b.title));
+      // return filteredList; // Or return in insertion order if preferred
+    }
+
+
+    return [...filteredList].sort((a, b) => { // Create a copy before sorting
+      let comparison = 0;
+      if (key === 'title') {
+        comparison = a.title.localeCompare(b.title);
+      } else if (key === 'rating') {
+        comparison = (a.rating ?? 0) - (b.rating ?? 0); // Treat null/undefined rating as 0
+      }
+
+      return order === 'asc' ? comparison : -comparison;
+    });
+  }, [mangaList, searchTerm, sortCriteria]);
+
 
   // --- Render Logic ---
   if (isLoadingList) {
-    return (
-        <div className="container mx-auto p-4 text-center">
-          <p>Loading manga list...</p>
-          {/* Optional: Add a spinner */}
-        </div>
-    );
+    return <div className="container mx-auto p-4 text-center"><p>Loading manga list...</p></div>;
   }
-
 
   return (
       <div className="container mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">Manga Chapter Tracker</h1>
+        <h1 className="text-2xl font-bold mb-6 text-center">Manga Tracker</h1>
 
-        {/* Input for adding new manga */}
-        <div className="mb-4 flex space-x-2">
-          <Input
-              type="text"
-              placeholder="Enter manga title"
-              value={newMangaTitle}
-              onChange={(e) => setNewMangaTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addManga(); }} // Add manga on Enter key
-          />
-          <Button onClick={addManga} disabled={newMangaTitle.trim() === ''}>Add Manga</Button>
+        {/* --- Controls Row --- */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center">
+          {/* Add Manga */}
+          <div className="flex w-full sm:w-auto flex-grow">
+            <Input
+                type="text"
+                placeholder="Añadir nuevo manga..."
+                value={newMangaTitle}
+                onChange={(e) => setNewMangaTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') addManga(); }}
+                className="rounded-r-none"
+            />
+            <Button onClick={addManga} disabled={newMangaTitle.trim() === ''} className="rounded-l-none">Añadir</Button>
+          </div>
+
+          {/* Search Manga */}
+          <div className="relative w-full sm:w-auto sm:flex-grow-[0.5]">
+            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+                type="text"
+                placeholder="Buscar por título..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8" // Padding left for the icon
+            />
+          </div>
+
+          {/* Sort Manga */}
+          <div className="w-full sm:w-auto">
+            <Select value={sortCriteria} onValueChange={setSortCriteria}>
+              <SelectTrigger className="w-full sm:w-[240px]">
+                <ArrowUpDown className="inline-block h-4 w-4 mr-2" />
+                <SelectValue placeholder="Ordenar por..." />
+              </SelectTrigger>
+              <SelectContent>
+                {sortOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Update Button */}
+          <Button onClick={handleUpdateLatestChapters} disabled={isUpdatingAll || mangaList.length === 0} className="w-full sm:w-auto">
+            {isUpdatingAll ? 'Actualizando...' : 'Actualizar Capítulos'}
+          </Button>
         </div>
 
-        {/* Button to update all latest chapters */}
-        <Button onClick={handleUpdateLatestChapters} disabled={isUpdatingAll || mangaList.length === 0}>
-          {isUpdatingAll ? 'Updating...' : 'Update Latest Chapters'}
-        </Button>
 
-        {/* Display Manga List */}
-        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mangaList.length === 0 && !isLoadingList && (
-              <p className="col-span-full text-center text-muted-foreground">Your manga list is empty. Add some manga to get started!</p>
+        {/* --- Display Manga List --- */}
+        <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"> {/* Added xl breakpoint */}
+          {filteredAndSortedMangaList.length === 0 && !isLoadingList && (
+              <p className="col-span-full text-center text-muted-foreground py-10">
+                {searchTerm ? `No se encontraron mangas para "${searchTerm}".` : 'Tu lista está vacía. ¡Añade algún manga!'}
+              </p>
           )}
-          {mangaList.map((manga, index) => (
-              <Card key={manga.title} className={`relative ${manga.loadingUpdate ? 'opacity-70' : ''}`}> {/* Use title as key if unique */}
+          {/* Use filteredAndSortedMangaList for rendering */}
+          {filteredAndSortedMangaList.map((manga) => ( // Removed index from map if not needed
+              <Card key={manga.title} className={`relative overflow-hidden transition-opacity duration-300 ${manga.loadingUpdate ? 'opacity-60' : ''}`}>
                 {manga.loadingUpdate && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10 rounded-lg">
-                      {/* Simple spinner or skeleton */}
-                      <Skeleton className="h-8 w-8 rounded-full" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10 rounded-lg">
+                      <Skeleton className="h-8 w-8 rounded-full animate-spin" /> {/* Spinner */}
                     </div>
                 )}
-                <CardHeader>
-                  <CardTitle>{manga.title}</CardTitle>
+                <CardHeader className="pb-2">
+                  {/* Use manga.title as the key for stability if titles are unique */}
+                  <CardTitle className="text-lg truncate">{manga.title}</CardTitle>
                   <CardDescription>
                     {manga.errorUpdate ? (
-                        <span className="text-destructive font-semibold">Error updating: {manga.errorUpdate}</span>
+                        <span className="text-red-600 font-semibold">Error: {manga.errorUpdate}</span>
                     ) : (
                         <>
-                          Latest Chapter:{' '}
-                          <span className="text-accent font-semibold">{manga.latestChapter || 'N/A'}</span>
+                          Último Cap: <span className="font-semibold text-primary">{manga.latestChapter || 'N/A'}</span>
                         </>
                     )}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-2">
+                <CardContent className="space-y-3 pt-2">
+                  {/* Rating */}
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Puntuación:</Label>
+                    <StarRating // Use the imported component
+                        rating={manga.rating}
+                        onRatingChange={(newRating) => {
+                          // Find index in the original list based on title
+                          const originalIndex = mangaList.findIndex(m => m.title === manga.title);
+                          if (originalIndex !== -1) {
+                            updateRating(originalIndex, newRating);
+                          }
+                        }}
+                    />
+                  </div>
+                  {/* User Chapter Input */}
                   <div>
-                    <Label htmlFor={`user-chapter-${index}`} className="text-sm font-medium">Your Chapter:</Label>
+                    <Label htmlFor={`user-chapter-${manga.title}`} className="text-sm font-medium">Tu Capítulo:</Label>
                     <Input
-                        type="number" // Use number type for better mobile input
-                        min="1" // Set minimum chapter number
-                        id={`user-chapter-${index}`}
+                        type="number"
+                        min="0" // Allow 0 if needed, or 1
+                        id={`user-chapter-${manga.title}`}
                         value={manga.userChapter}
-                        onChange={(e) => updateChapter(index, e.target.value)}
-                        className="mt-1"
+                        onChange={(e) => {
+                          const originalIndex = mangaList.findIndex(m => m.title === manga.title);
+                          if (originalIndex !== -1) {
+                            updateChapter(originalIndex, e.target.value);
+                          }
+                        }}
+                        className="mt-1 h-9" // Slightly smaller input
                         placeholder="e.g., 1"
                     />
                   </div>
+                  {/* Delete Button */}
                   <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
-                      className="absolute top-2 right-2 text-destructive hover:bg-destructive/10" // Position delete button
-                      onClick={() => deleteManga(index)}
-                      aria-label={`Delete ${manga.title}`} // Accessibility
+                      className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => deleteManga(manga.title)} // Use title to delete
+                      aria-label={`Delete ${manga.title}`}
                   >
                     <Trash className="h-4 w-4" />
                   </Button>
