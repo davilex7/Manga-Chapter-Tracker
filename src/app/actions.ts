@@ -1,26 +1,11 @@
 'use server';
+
 import fetch from 'node-fetch';
-let DOMParserImplementation: typeof DOMParser;
-try {
-  if (typeof DOMParser === 'undefined') {
-    // Dynamically import jsdom only when needed
-    const { JSDOM } = await import('jsdom');
-    DOMParserImplementation = new JSDOM('').window.DOMParser;
-    console.log('Using JSDOM for parsing.');
-  } else {
-    DOMParserImplementation = DOMParser;
-    console.log('Using native DOMParser.');
-  }
-} catch (domError: any) {
-  console.error(`Failed to initialize DOMParser: ${domError.message}`);
-  // Handle the error appropriately, maybe throw or set a fallback
-  throw new Error("DOMParser could not be initialized.");
-}
 
 interface MangaInfo {
   title: string;
   latestChapter: string | null;
-  userChapter?: string; // Remove the required property
+  userChapter: string;
   loading: boolean;
   error?: string;
 }
@@ -48,18 +33,34 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       if (!searchResultsPageContent) {
         error = `Failed to fetch search results for ${title}: No content returned`;
         console.error(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue; // Skip to the next manga title
       }
 
       // Step 3: Parse the HTML content to extract the manga link
+      let DOMParserImplementation: typeof DOMParser;
+      if (typeof DOMParser === 'undefined') {
+        try {
+          const { JSDOM } = await import('jsdom');
+          DOMParserImplementation = new JSDOM('').window.DOMParser;
+          console.log('Using JSDOM for parsing.');
+        } catch (domError: any) {
+          error = `Failed to initialize DOMParser: ${domError.message}`;
+          console.error(error);
+          newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
+          continue;
+        }
+      } else {
+        DOMParserImplementation = DOMParser;
+        console.log('Using native DOMParser.');
+      }
       const parser = new DOMParserImplementation();
       const searchResultsPage = parser.parseFromString(searchResultsPageContent, 'text/html');
 
       if (!searchResultsPage) {
         error = `Failed to parse search results for ${title}`;
         console.error(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue; // Skip to the next manga title
       }
 
@@ -68,7 +69,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       if (!firstMangaItem) {
         error = `No search results found for ${title}: Check manga title or website change`;
         console.error(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue;
       }
 
@@ -86,7 +87,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       if (!mangaPageContent) {
         error = `Failed to fetch manga page for ${title} at ${mangaUrl}`;
         console.error(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue;
       }
 
@@ -95,7 +96,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       if (!mangaPage) {
         error = `Failed to parse manga page for ${title} from ${mangaUrl}`;
         console.error(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue;
       }
 
@@ -105,7 +106,7 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       if (!latestChapterElement) {
         error = `Could not find latest chapter element for ${title} at ${mangaUrl}`;
         console.warn(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue;
       }
 
@@ -114,16 +115,16 @@ export async function processMangaListAction(mangaTitles: string[]): Promise<Man
       if (!latestChapter) {
         error = `Could not extract chapter text for ${title} at ${mangaUrl}`;
         console.warn(error);
-        newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+        newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
         continue;
       }
 
-      newMangaInfoList.push({ title, latestChapter: latestChapter, loading: false, error: undefined });
+      newMangaInfoList.push({ title, latestChapter: latestChapter, userChapter: '1', loading: false, error: undefined });
 
     } catch (err: any) {
       error = `Failed to process ${title}: ${err.message}`;
       console.error(error);
-      newMangaInfoList.push({ title, latestChapter: null, loading: false, error });
+      newMangaInfoList.push({ title, latestChapter: null, userChapter: '1', loading: false, error });
     }
     console.log(newMangaInfoList)
   }

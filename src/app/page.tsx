@@ -2,13 +2,13 @@
 
 import {useState, useEffect} from 'react';
 import {Button} from '@/components/ui/button';
-import {Textarea} from '@/components/ui/textarea';
+import {Input} from "@/components/ui/input";
+import {Label} from "@/components/ui/label";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Skeleton} from '@/components/ui/skeleton';
 import {useToast} from '@/hooks/use-toast';
 import {processMangaListAction} from '@/app/actions';
-import {Input} from "@/components/ui/input"; // Import Input
-import {Label} from "@/components/ui/label";
+import { Trash } from "lucide-react";
 
 interface MangaInfo {
   title: string;
@@ -77,6 +77,11 @@ export default function Home() {
     setMangaList(mergedList);
 
   };
+  const deleteManga = (index: number) => {
+    const updatedList = [...mangaList];
+    updatedList.splice(index, 1);
+    setMangaList(updatedList);
+  };
 
   return (
     <div className="container mx-auto p-4">
@@ -123,6 +128,10 @@ export default function Home() {
               </CardDescription>
             </CardHeader>
             <CardContent></CardContent>
+             <Button variant="destructive" size="sm" onClick={() => deleteManga(index)}>
+                  <Trash className="mr-2 h-4 w-4" />
+                  Delete
+                </Button>
           </Card>
         ))}
       </div>
@@ -130,4 +139,3 @@ export default function Home() {
     </div>
   );
 }
-
